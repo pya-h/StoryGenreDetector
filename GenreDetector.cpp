@@ -89,53 +89,55 @@ bool FileExists(const std::string& filename)
 		vector<Keyword> keywords;
 	};
 
+
 	struct Story
 	{
+		// Story and its analysis are linked two ways.
+		struct Analysis
+		{
+			static Int number_of_analysis;
+			Int id;
+			Story *story;
+			vector<Prediction *> predictions; // an array of predictions
+			vector<Word *> common_words;
+
+			Analysis(Story *_story)
+			{
+				story = _story;
+				id = ++number_of_analysis;
+			}
+
+			void Predict(vector<Genre> genres);
+
+			void Dump();
+		};
+
 		Int index;
 		vector<Word *> words;
 		string name, filename;
-	
+		Analysis *analysis;
+
 		Story(string _filename, Int _index)
 		{
 			filename = _filename;
 			// remove file extension from filename and set it on name
 			name = ExtractNameFromFilename(filename);
+			analysis = nullptr;
 		}
 
 		bool LoadStory();
 		void AddWord(Word *);
+		void PrintWords();
+		bool Analyze();
 	};
 
-	struct Analysis
-	{
-		Int id;
-		Story *story;
-		Prediction *predictions; // an array
-		vector<Word> common_words;
-		bool analyzed;
-		Analysis(Story *_story)
-		{
-			story = _story;
-			analyzed = false;
-		}
-
-		void Predict(vector<Genre> genres)
-		{
-
-			analyzed = true;
-		}
-
-		void Dump()
-		{
-		}
-	};
-
+	Int Story::Analysis::number_of_analysis = 0;
 
 /*** UI Structures & enums ***/
 	enum Commands {
-		CMD_EXIT = 0,
+		CMD_EXIT = (char) 0,
 		CMD_IMPORT_STORY,
-
+		CMD_ANALYZE_STORY
 	};
 
 // Main:
@@ -144,18 +146,19 @@ int main()
 	/*** Initial Data **/
 	const short NUMBER_OF_GENRES = 4;
 	const string GENRE_FILENAMES[] = { "Fantasy.csv", "Mystery.csv", "Romance.csv", "SciFi.csv" }; // Genre file names:
-	
+
 	const string PROGRAM_COMMANDS[] = { // List of program commands:
 		"exit",
-		"import_story"
+		"import_story",
+		"analyze_story"
 	};
 
 	/*** Data Preprocessing: ***/
-	Genre *common_genres[4];
+	Genre **common_genres = new Genre*[NUMBER_OF_GENRES];
 	vector<Story *> stories;
 
 	// Read genres data
-	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < NUMBER_OF_GENRES; i++)
 		common_genres[i] = Genre::CreateGenreFromCSV(GENRE_FILENAMES[i]);
 
 	/*** Menu & Main App Loop:  ***/
@@ -177,7 +180,7 @@ int main()
 			iss_line >> filename;
 			if (!filename[0] || filename.empty())
 			{
-				cout << PROGRAM_COMMANDS[CMD_IMPORT_STORY] << " " << "{filename.txt}"<< endl;
+				cout << PROGRAM_COMMANDS[CMD_IMPORT_STORY] << " {filename.txt}"<< endl;
 				continue; // Go to getting next command in next loop.
 			}
 			Story *new_story = new Story(filename, stories.size() + 1);
@@ -193,7 +196,11 @@ int main()
 				continue;
 			}
 			stories.push_back(new_story);
-			
+			cout << new_story->name << " imported successfully." << endl;
+		}
+		else if (command == PROGRAM_COMMANDS[CMD_ANALYZE_STORY])
+		{
+
 		}
 	} while (command != PROGRAM_COMMANDS[CMD_EXIT]);
 
@@ -206,7 +213,7 @@ int main()
 	{
 		// remove file extension from filename and set it on name
 		string name = filename;
-		int index_of_dot = name.length();
+		Int index_of_dot = name.length();
 		while (name[--index_of_dot] != '.' && index_of_dot > 0) // find the position of dot
 			;
 		if (index_of_dot > 0)          // if filename has a .extension part :
@@ -261,7 +268,7 @@ int main()
 	{
 		// read file word by word, and count senmtences
 		ifstream story_file(filename);
-		if (!story_file.is_open() || !story_file.good())
+		if (!story_file.is_open() || story_file.fail() || !story_file.good())
 			return false;
 		string str_word;
 
@@ -272,7 +279,7 @@ int main()
 		}
 
 		story_file.close();
-
+		return true;
 	}
 
 	void Story::AddWord(Word *word)
@@ -290,4 +297,18 @@ int main()
 			free(word); // Free the memory from the extra word object.
 		}
 
+	}
+
+	void Story::PrintWords()
+	{
+		cout << "Word\t\tCount\n";
+		for (Long i = 0; i < words.size(); i++)
+			cout << words[i]->w << "\t\t" << words[i]->count << endl;
+	}
+
+	bool Story::Analyze()
+	{
+		Analysis *analysis = new Analysis(this);
+		
+		return true;
 	}
