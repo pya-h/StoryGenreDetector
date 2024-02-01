@@ -221,7 +221,7 @@ int main()
 		Genre *next_genre = Genre::CreateGenreFromCSV(GENRE_FILENAMES[i]); // CreateGenreFromCSV return a pointer
 		if (next_genre == nullptr) // For this if check, so if the pointer doesnt point to a new genre, means loading the genre was not successfull.
 		{
-			cout << "Error importing genre keywords. Please check keyword files." << endl;
+			cout << "Error importing " << next_genre->title << " keywords. Please check keyword files." << endl;
 			return 1;
 		}
 		common_genres.push_back(*next_genre); // common_genres will be passed as copy, because we doesnt want its original objects to be modified.
