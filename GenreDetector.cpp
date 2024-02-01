@@ -192,9 +192,9 @@ int main()
 	}; // Genre file names:
 	const short NUMBER_OF_PROGRAM_COMMANDS = 8;
 	const string PROGRAM_COMMANDS[] = { // List of program commands:
-		"is",
+		"import_story",
 		"show_the_list_of_stories",
-		"as",
+		"analyze_story",
 		"analyzed_stories_list",
 		"dump_analyzed_stories",
 		"exit",
