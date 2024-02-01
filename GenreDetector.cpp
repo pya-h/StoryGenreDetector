@@ -103,7 +103,7 @@ struct Prediction
 {
 	Genre *genre;
 	float confidence; // The accuracy of the prediction
-	//vector<Keyword *> common_words;
+	vector<Keyword *> common_words;
 	SLong m_i; // sum of weights * counts
 	Long number_of_keywords; // absolute number of keywords in the story, considering their counts.
 	Prediction(Genre *_genre)
@@ -116,6 +116,7 @@ struct Prediction
 	void ComputeConfidence(int sum_of_all_genre_weights);
 	void ComputeGenreWeight(); // compute m_i
 	string ToCSVColumn();
+	void FindCommonWords();
 };
 
 
@@ -128,7 +129,7 @@ struct Story
 		Int id;
 		Story *story;
 		vector<Prediction *> predictions; // an array of predictions
-		vector<Keyword *> common_words;
+		vector<Long> genre_keywords_total_counts; // number of keywords in the storys, by the order of imported genres
 		int sum_of_all_genre_weights;
 
 		Analysis(Story *_story)
@@ -138,7 +139,7 @@ struct Story
 			sum_of_all_genre_weights = 0;
 		}
 
-		void Dump();
+		string ToCSVColumn();
 		void ComputeConfidences();
 		string ToString();
 
@@ -183,8 +184,13 @@ int main()
 {
 	/*** Initial Data **/
 	const short NUMBER_OF_GENRES = 4;
-	const string GENRE_FILENAMES[] = { "Fantasy.csv", "Mystery.csv", "Romance.csv", "SciFi.csv" }; // Genre file names:
-	const short NUMBER_OF_PROGRAM_COMMANDS = 7;
+	const string GENRE_FILENAMES[] = { 
+		"Romance.csv",
+		"Mystery.csv",
+		"Fantasy.csv",
+		"SciFi.csv"
+	}; // Genre file names:
+	const short NUMBER_OF_PROGRAM_COMMANDS = 8;
 	const string PROGRAM_COMMANDS[] = { // List of program commands:
 		"is",
 		"show_the_list_of_stories",
@@ -348,6 +354,39 @@ int main()
 				cout << endl;
 			}
 		}
+		else if (command == PROGRAM_COMMANDS[CMD_DUMP_ANALYZED_STORIES])
+		{
+			string output_filename;
+			iss_line >> output_filename;
+			if (!output_filename[0] || output_filename.empty())
+			{
+				cout << PROGRAM_COMMANDS[CMD_DUMP_ANALYZED_STORIES] << " " << PROGRAM_COMMANDS_PARAM_LIST[CMD_DUMP_ANALYZED_STORIES] << endl;
+				continue;
+			}
+			if (!story_analyzes.size())
+			{
+				cout << "No analyzed stories to dump." << endl;
+				continue;
+			}
+			ofstream output_file(output_filename);
+			if (!output_file.is_open() || !output_file.good() || output_file.fail())
+			{
+				cout << "Error openning file." << endl;
+				continue;
+			}
+			// Create csv header :
+			output_file << "Story, Genre, Confidence, ";
+			for (const auto &genre : common_genres)
+				output_file << genre.title << " Words, ";
+
+			output_file << "Common Keyword 1, Common Keyword 2, Common Keyword 3, Common Keyword 4\n";
+			for (const auto &analysis : story_analyzes)
+			{
+				output_file << analysis->ToCSVColumn();
+			}
+
+			output_file.close();
+		}
 		else if (command != PROGRAM_COMMANDS[CMD_EXIT])
 			// all command list checked. command is invalid!
 			cout << "Command not found. See the list of commands with " << PROGRAM_COMMANDS[CMD_SHOW_COMMANDS] << "." << endl;
@@ -427,144 +466,188 @@ Genre *Genre::CreateGenreFromCSV(string filename)
 	return genre;
 }
 
-
 /*** struct Story Methods:  ***/
-bool Story::LoadStory() // read story from file name;
-{
-	// read file word by word, and count senmtences
-	ifstream story_file(filename);
-	if (!story_file.is_open() || story_file.fail() || !story_file.good())
-		return false;
-	string str_word;
-	bool previous_sentence_ended = true;
-	char last_char;
-	while (story_file >> str_word) // Read the file word by word
+	bool Story::LoadStory() // read story from file name;
 	{
-		last_char = str_word[str_word.length() - 1];
-		Word word(str_word, previous_sentence_ended);
-		AddWord(word); // Add word to the words vector, or increase its count if it exists already.
-		previous_sentence_ended = last_char == '.' || last_char == '?'
-			|| last_char == '!' || last_char == '\n' || last_char == ':' || last_char == ';';
-	}
-
-	story_file.close();
-	return true;
-}
-
-void Story::AddWord(Word &word)
-{
-	// Add a word to words vector or if it exists, increase the count;
-	// search for the word.
-	Long i;
-	for (i = 0; i < words.size() && words[i].w != word.w; i++);
-	if (i >= words.size())
-		words.push_back(word); // If words is not in the vector, add it.
-	else
-	{
-		// If word is added to the vector previously, just increase its count.
-		words[i].count++;
-		if (!word.is_captial_case) // if it was a Person name, it must be always captial!
-			words[i].is_captial_case = false;
-	}
-
-}
-
-void Story::PrintWords()
-{
-	cout << "Word\t\tCount\n";
-	for (const auto &word : words)
-		cout << word.w << "\t\t" << word.count << endl;
-}
-
-bool Story::Analyze(vector<Genre> genres, string output_filename)
-{
-	analysis = new Analysis(this);
-	analysis->sum_of_all_genre_weights = 0;
-	for (auto &genre : genres)
-	{
-		Prediction *prediction = new Prediction(new Genre(genre));
-		for (auto &keyword : prediction->genre->keywords)
+		// read file word by word, and count senmtences
+		ifstream story_file(filename);
+		if (!story_file.is_open() || story_file.fail() || !story_file.good())
+			return false;
+		string str_word;
+		bool previous_sentence_ended = true;
+		char last_char;
+		while (story_file >> str_word) // Read the file word by word
 		{
-			keyword.story_word = nullptr;
-			for (auto &word : words) // Check all the words of story for KeyWord match:
-			{
-				if (keyword.w == word.w)
-				{
+			last_char = str_word[str_word.length() - 1];
+			Word word(str_word, previous_sentence_ended);
+			AddWord(word); // Add word to the words vector, or increase its count if it exists already.
+			previous_sentence_ended = last_char == '.' || last_char == '?'
+				|| last_char == '!' || last_char == '\n' || last_char == ':' || last_char == ';';
+		}
 
-					keyword.story_word = &word; // Connect the word to its matched keyword; remember word contains the .count variable which is computed before wile loading,
-					// So there is no need to count anything in the story.
-					break;
+		story_file.close();
+		return true;
+	}
+
+	void Story::AddWord(Word &word)
+	{
+		// Add a word to words vector or if it exists, increase the count;
+		// search for the word.
+		Long i;
+		for (i = 0; i < words.size() && words[i].w != word.w; i++);
+		if (i >= words.size())
+			words.push_back(word); // If words is not in the vector, add it.
+		else
+		{
+			// If word is added to the vector previously, just increase its count.
+			words[i].count++;
+			if (!word.is_captial_case) // if it was a Person name, it must be always captial!
+				words[i].is_captial_case = false;
+		}
+
+	}
+
+	void Story::PrintWords()
+	{
+		cout << "Word\t\tCount\n";
+		for (const auto &word : words)
+			cout << word.w << "\t\t" << word.count << endl;
+	}
+
+	bool Story::Analyze(vector<Genre> genres, string output_filename)
+	{
+		analysis = new Analysis(this);
+		analysis->sum_of_all_genre_weights = 0;
+		for (auto &genre : genres)
+		{
+			Prediction *prediction = new Prediction(new Genre(genre));
+			for (auto &keyword : prediction->genre->keywords)
+			{
+				keyword.story_word = nullptr;
+				for (auto &word : words) // Check all the words of story for KeyWord match:
+				{
+					if (keyword.w == word.w)
+					{
+
+						keyword.story_word = &word; // Connect the word to its matched keyword; remember word contains the .count variable which is computed before wile loading,
+						// So there is no need to count anything in the story.
+						break;
+					}
+				}
+			}
+
+			prediction->ComputeGenreWeight(); // m_i calculation
+			analysis->sum_of_all_genre_weights += prediction->m_i;
+			prediction->FindCommonWords();
+			analysis->predictions.push_back(prediction);
+			analysis->genre_keywords_total_counts.push_back(prediction->number_of_keywords);
+		}
+
+		analysis->ComputeConfidences(); // sompute each prediction confidence
+		analysis->SortPredictions();
+		return true;
+	}
+
+/*** struct Story::Analysis ***/
+	void Story::Analysis::ComputeConfidences()
+	{
+		for (auto &prediction : predictions)
+			prediction->ComputeConfidence(sum_of_all_genre_weights);
+	}
+
+	string Story::Analysis::ToString()
+	{
+		ostringstream oss;
+		oss << "Story Name: " << ConvertToCapitalizedCase(story->name) << endl;
+		oss << "Predicted Genre: " << predictions[0]->genre->title << endl;
+		oss << "Genre, Number of Keywords, Confidence\n";
+		for (const auto &prediction : predictions)
+			oss << prediction->ToCSVColumn();
+	
+		return oss.str();
+	}
+
+	void Story::Analysis::SortPredictions()
+	{ // sort predictions order by confidence in a descending order
+		for (short i = 0; i < predictions.size(); i++)
+		{
+			for (short j = i + 1; j < predictions.size(); j++)
+			{
+				if (predictions[i]->confidence < predictions[j]->confidence)
+				{
+					// swap their positions
+					Prediction *temp = predictions[i];
+					predictions[i] = predictions[j]; // Change predictions[i] reference to the Prediction with ahigher value of confidence.
+					predictions[j] = temp; // Send lesser-in-value confidence Predeictions to the right.
+				}
+			}
+		}
+	}
+
+	string Story::Analysis::ToCSVColumn()
+	{
+		ostringstream oss;
+		oss << story->name << ", " << predictions[0]->genre->title << ", " << fixed << setprecision(6) << predictions[0]->confidence << ", ";
+
+		// Genre Keywords
+		for (const auto &genre_keywords_count : genre_keywords_total_counts)
+		{
+			oss << genre_keywords_count << ", ";
+		}
+		Long number_of_common_words = predictions[0]->common_words.size();
+		if (number_of_common_words > 4)
+			number_of_common_words = 4;
+		for (Long i = 0; i < number_of_common_words - 1; i++)
+			oss << predictions[0]->common_words[i]->w << ", ";
+		if (number_of_common_words > 0)
+			oss << predictions[0]->common_words[number_of_common_words - 1]->w << "\n";
+		return oss.str();
+	}
+
+
+/***struct Prediction ***/
+	void Prediction::ComputeGenreWeight()
+	{
+		m_i = 0;
+		for (const auto &keyword : genre->keywords)
+			if (keyword.story_word != nullptr)
+			{
+				m_i += keyword.weight * keyword.story_word->count;
+				number_of_keywords += keyword.story_word->count;
+			}
+	}
+
+	void Prediction::ComputeConfidence(int sum_of_all_genre_weights)
+	{
+		confidence = static_cast<float>(m_i) / static_cast<float>(sum_of_all_genre_weights);
+	}
+
+	string Prediction::ToCSVColumn()
+	{
+		ostringstream oss;
+		oss << genre->title << ", " << number_of_keywords << ", " << fixed << setprecision(6) << confidence * 100 << "%\n";
+		return oss.str();
+	}
+
+	void Prediction::FindCommonWords()
+	{
+		common_words.clear();
+		for (auto &keyword : genre->keywords)
+			if (keyword.story_word != nullptr)
+				common_words.push_back(&keyword);
+		// Sort keywords by counts in the story
+		for (int i = 0; i < common_words.size(); i++)
+		{
+			for (int j = i + 1; j < common_words.size(); j++)
+			{
+				if (common_words[i]->story_word->count < common_words[j]->story_word->count)
+				{
+					// Swap references:
+					Keyword *temp = common_words[i];
+					common_words[i] = common_words[j];
+					common_words[j] = temp;
 				}
 			}
 		}
 
-		prediction->ComputeGenreWeight(); // m_i calculation
-		analysis->sum_of_all_genre_weights += prediction->m_i;
-		analysis->predictions.push_back(prediction);
 	}
-
-	analysis->ComputeConfidences(); // sompute each prediction confidence
-	analysis->SortPredictions();
-	return true;
-}
-
-/*** struct Story::Analysis ***/
-void Story::Analysis::ComputeConfidences()
-{
-	for (auto &prediction : predictions)
-		prediction->ComputeConfidence(sum_of_all_genre_weights);
-}
-
-string Story::Analysis::ToString()
-{
-	ostringstream oss;
-	oss << "Story Name: " << ConvertToCapitalizedCase(story->name) << endl;
-	oss << "Predicted Genre: " << predictions[0]->genre->title << endl;
-	oss << "Genre, Number of Keywords, Confidence\n";
-	for (const auto &prediction : predictions)
-		oss << prediction->ToCSVColumn();
-	
-	return oss.str();
-}
-
-void Story::Analysis::SortPredictions()
-{ // sort predictions order by confidence in a descending order
-	for (short i = 0; i < predictions.size(); i++)
-	{
-		for (short j = i + 1; j < predictions.size(); j++)
-		{
-			if (predictions[i]->confidence < predictions[j]->confidence)
-			{
-				// swap their positions
-				Prediction *temp = predictions[i];
-				predictions[i] = predictions[j]; // Change predictions[i] reference to the Prediction with ahigher value of confidence.
-				predictions[j] = temp; // Send lesser-in-value confidence Predeictions to the right.
-			}
-		}
-	}
-}
-
-/***struct Prediction ***/
-void Prediction::ComputeGenreWeight()
-{
-	m_i = 0;
-	for (const auto &keyword : genre->keywords)
-		if (keyword.story_word != nullptr)
-		{
-			m_i += keyword.weight * keyword.story_word->count;
-			number_of_keywords += keyword.story_word->count;
-		}
-}
-
-void Prediction::ComputeConfidence(int sum_of_all_genre_weights)
-{
-	confidence = static_cast<float>(m_i) / static_cast<float>(sum_of_all_genre_weights);
-}
-
-string Prediction::ToCSVColumn()
-{
-	ostringstream oss;
-	oss << genre->title << ", " << number_of_keywords << ", " << fixed << setprecision(6) << confidence * 100 << "%\n";
-	return oss.str();
-}
-
