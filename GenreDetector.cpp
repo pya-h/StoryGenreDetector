@@ -99,7 +99,7 @@ bool FileExists(const std::string& filename)
 			Int id;
 			Story *story;
 			vector<Prediction *> predictions; // an array of predictions
-			vector<Word *> common_words;
+			vector<Keyword *> common_words;
 
 			Analysis(Story *_story)
 			{
@@ -113,7 +113,7 @@ bool FileExists(const std::string& filename)
 		};
 
 		Int index;
-		vector<Word *> words;
+		vector<Word> words;
 		string name, filename;
 		Analysis *analysis;
 
@@ -126,9 +126,9 @@ bool FileExists(const std::string& filename)
 		}
 
 		bool LoadStory();
-		void AddWord(Word *);
+		void AddWord(Word &);
 		void PrintWords();
-		bool Analyze();
+		bool Analyze(vector<Genre>, string);
 	};
 
 	Int Story::Analysis::number_of_analysis = 0;
@@ -154,12 +154,21 @@ int main()
 	};
 
 	/*** Data Preprocessing: ***/
-	Genre **common_genres = new Genre*[NUMBER_OF_GENRES];
+	vector<Genre> common_genres;
 	vector<Story *> stories;
 
 	// Read genres data
 	for (int i = 0; i < NUMBER_OF_GENRES; i++)
-		common_genres[i] = Genre::CreateGenreFromCSV(GENRE_FILENAMES[i]);
+	{
+		Genre *next_genre = Genre::CreateGenreFromCSV(GENRE_FILENAMES[i]); // CreateGenreFromCSV return a pointer
+		if (next_genre == nullptr) // For this if check, so if the pointer doesnt point to a new genre, means loading the genre was not successfull.
+		{
+			cout << "Error importing genre keywords. Please check keyword files." << endl;
+			return 1;
+		}
+		common_genres.push_back(*next_genre); // common_genres will be passed as copy, because we doesnt want its original objects to be modified.
+		// each story analysis will get a copy of these genres 
+	}
 
 	/*** Menu & Main App Loop:  ***/
 	string line = "", command = "";
@@ -170,7 +179,6 @@ int main()
 		stringstream iss_line(line);
 
 		// Split line by space:
-		
 		iss_line >> command;
 
 		// Command Check:
@@ -200,6 +208,20 @@ int main()
 		}
 		else if (command == PROGRAM_COMMANDS[CMD_ANALYZE_STORY])
 		{
+			Int index;
+			iss_line >> index;
+			if (index < 0 || index >= stories.size())
+			{
+				cout << "Invalid story index." << endl;
+				continue;
+			}
+			string output_filename;
+			iss_line >> output_filename;
+			if (!output_filename[0] || output_filename.empty())
+			{
+				cout << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " {story_index} {output_file_name.txt}\n";
+				continue;
+			}
 
 		}
 	} while (command != PROGRAM_COMMANDS[CMD_EXIT]);
@@ -241,7 +263,7 @@ int main()
 		std::ifstream genre_file(filename);
 
 		// Check if the file is opened successfully
-		if (!genre_file.is_open()) 
+		if (!genre_file.is_open() || !genre_file.good() || genre_file.fail()) 
 			return nullptr;
 
 		string line;
@@ -274,7 +296,7 @@ int main()
 
 		while (story_file >> str_word) // Read the file word by word
 		{
-			Word *word = new Word(str_word);
+			Word word(str_word);
 			AddWord(word); // Add word to the words vector, or increase its count if it exists already.
 		}
 
@@ -282,19 +304,18 @@ int main()
 		return true;
 	}
 
-	void Story::AddWord(Word *word)
+	void Story::AddWord(Word &word)
 	{
 		// Add a word to words vector or if it exists, increase the count;
 		// search for the word.
 		Long i;
-		for (i = 0; i < words.size() && words[i]->w != word->w; i++);
+		for (i = 0; i < words.size() && words[i].w != word.w; i++);
 		if (i >= words.size())
 			words.push_back(word); // If words is not in the vector, add it.
 		else
 		{
 			// If word is added to the vector previously, just increase its count.
-			words[i]->count++;
-			free(word); // Free the memory from the extra word object.
+			words[i].count++;
 		}
 
 	}
@@ -302,13 +323,19 @@ int main()
 	void Story::PrintWords()
 	{
 		cout << "Word\t\tCount\n";
-		for (Long i = 0; i < words.size(); i++)
-			cout << words[i]->w << "\t\t" << words[i]->count << endl;
+		for (const auto &word: words)
+			cout << word.w << "\t\t" << word.count << endl;
 	}
 
-	bool Story::Analyze()
+	bool Story::Analyze(vector<Genre> genres, string output_filename)
 	{
 		Analysis *analysis = new Analysis(this);
-		
+		for (const auto &genre : genres)
+		{
+			for (const auto &word : words)
+			{
+				
+			}
+		}
 		return true;
 	}
