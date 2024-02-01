@@ -32,7 +32,7 @@ bool FileExists(const std::string& filename)
 /*** Global Function Prototypes: **/
 string ExtractNameFromFilename(string filename);
 string ConvertToLowerCase(string str);
-
+string ConvertToCapitalizedCase(string str);
 /*** Structs & Models: ***/
 struct Word
 {
@@ -140,7 +140,7 @@ struct Story
 
 		void Dump();
 		void ComputeConfidences();
-		string ToCSVString();
+		string ToString();
 
 		void SortPredictions();
 	};
@@ -168,11 +168,14 @@ Long Story::Analysis::number_of_analysis = 0;
 
 /*** UI Structures & enums ***/
 enum Commands {
-	CMD_EXIT = (char)0,
-	CMD_IMPORT_STORY,
+	CMD_IMPORT_STORY = (char)0,
+	CMD_SHOW_THE_LIST_OF_STORIES,
 	CMD_ANALYZE_STORY,
+	CMD_ANALYZED_SROTIES_LIST,
+	CMD_DUMP_ANALYZED_STORIES,
+	CMD_EXIT,
 	CMD_SHOW_STORY_ANALYSIS,
-	CMD_ANALYZED_SROTIES_LIST
+	CMD_SHOW_COMMANDS,
 };
 
 // Main:
@@ -181,15 +184,27 @@ int main()
 	/*** Initial Data **/
 	const short NUMBER_OF_GENRES = 4;
 	const string GENRE_FILENAMES[] = { "Fantasy.csv", "Mystery.csv", "Romance.csv", "SciFi.csv" }; // Genre file names:
-
+	const short NUMBER_OF_PROGRAM_COMMANDS = 7;
 	const string PROGRAM_COMMANDS[] = { // List of program commands:
-		"exit",
 		"is",
+		"show_the_list_of_stories",
 		"as",
+		"analyzed_stories_list",
+		"dump_analyzed_stories",
+		"exit",
 		"show_story_analysis",
-		"analyzed_stories_list"
+		"show_the_list_of_commands"
 	};
-
+	const string PROGRAM_COMMANDS_PARAM_LIST[] = {
+		"{filename.txt}",
+		"",
+		"{story_index} {output_file_name.txt}",
+		"",
+		"{output_file_name.csv}",
+		"",
+		"{story_index}",
+		""
+	};
 	/*** Data Preprocessing: ***/
 	vector<Genre> common_genres;
 	vector<Story *> stories;
@@ -225,7 +240,7 @@ int main()
 			iss_line >> filename;
 			if (!filename[0] || filename.empty())
 			{
-				cout << PROGRAM_COMMANDS[CMD_IMPORT_STORY] << " {filename.txt}" << endl;
+				cout << PROGRAM_COMMANDS[CMD_IMPORT_STORY] << " " << PROGRAM_COMMANDS_PARAM_LIST[CMD_IMPORT_STORY] << endl;
 				continue; // Go to getting next command in next loop.
 			}
 			Story *new_story = new Story(filename, stories.size() + 1);
@@ -252,7 +267,7 @@ int main()
 			iss_line >> output_filename;
 			if (index == -1 || !output_filename[0] || output_filename.empty())
 			{
-				cout << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " {story_index} {output_file_name.txt}" << endl;
+				cout << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " " << PROGRAM_COMMANDS_PARAM_LIST[CMD_ANALYZE_STORY] << endl;
 				continue;
 			}
 			if (index < 1 || index > stories.size())
@@ -262,7 +277,7 @@ int main()
 			}
 			stories[--index]->Analyze(common_genres, output_filename);
 			story_analyzes.push_back(stories[index]->analysis);
-			string str_analysis = stories[index]->analysis->ToCSVString();
+			string str_analysis = stories[index]->analysis->ToString();
 			cout << str_analysis;
 			ofstream output_file(output_filename);
 			if (!output_file.is_open() || !output_file.good() || output_file.fail())
@@ -279,7 +294,7 @@ int main()
 			iss_line >> index;
 			if (index == -1)
 			{
-				cout << index << PROGRAM_COMMANDS[CMD_SHOW_STORY_ANALYSIS] << " {story_index}" << endl;
+				cout << index << PROGRAM_COMMANDS[CMD_SHOW_STORY_ANALYSIS] << " " << PROGRAM_COMMANDS_PARAM_LIST[CMD_SHOW_STORY_ANALYSIS] << endl;
 				continue;
 			}
 			if (index < 1 || index > stories.size())
@@ -292,7 +307,7 @@ int main()
 				cout << "This story has not been analyzed yet. Please use the " << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " command." << endl;
 				continue;
 			}
-			cout << stories[index]->analysis->ToCSVString();
+			cout << stories[index]->analysis->ToString();
 		}
 		else if (command == PROGRAM_COMMANDS[CMD_ANALYZED_SROTIES_LIST])
 		{
@@ -304,15 +319,38 @@ int main()
 			}
 
 			cout << "The analyzed stories are: ";
-			string first_story = ConvertToLowerCase(story_analyzes[0]->story->name);
-			first_story[0] = toupper(first_story[0]);
-			cout << first_story;
+			cout << ConvertToCapitalizedCase(story_analyzes[0]->story->name);
 			for (Int i = 1; i < number_of_analysis - 1; i++)
 				cout << ", " << ConvertToLowerCase(story_analyzes[i]->story->name);
 			if (number_of_analysis > 1)
 				cout << " and " << ConvertToLowerCase(story_analyzes[number_of_analysis - 1]->story->name);
 			cout << "." << endl;
 		}
+		else if (command == PROGRAM_COMMANDS[CMD_SHOW_THE_LIST_OF_STORIES])
+		{
+			if (!stories.size())
+			{
+				cout << "No imported stories." << endl; // Not mentioned in the project description!
+				continue;
+			}
+			cout << "List of all imported stories are:" << endl;
+			for (Long i = 0; i < stories.size(); i++)
+				cout << i + 1 << ". " << ConvertToCapitalizedCase(stories[i]->name) << endl;
+			
+		}
+		else if (command == PROGRAM_COMMANDS[CMD_SHOW_COMMANDS])
+		{
+			for (short i = 0; i < NUMBER_OF_PROGRAM_COMMANDS; i++)
+			{
+				cout << PROGRAM_COMMANDS[i];
+				if (!PROGRAM_COMMANDS_PARAM_LIST[i].empty())
+					cout << " " << PROGRAM_COMMANDS_PARAM_LIST[i];
+				cout << endl;
+			}
+		}
+		else if (command != PROGRAM_COMMANDS[CMD_EXIT])
+			// all command list checked. command is invalid!
+			cout << "Command not found. See the list of commands with " << PROGRAM_COMMANDS[CMD_SHOW_COMMANDS] << "." << endl;
 	} while (command != PROGRAM_COMMANDS[CMD_EXIT]);
 
 	return 0;
@@ -342,6 +380,14 @@ string ConvertToLowerCase(string str)
 	}
 	return result;
 }
+
+string ConvertToCapitalizedCase(string str)
+{
+	string str_cap = ConvertToLowerCase(str);
+	str_cap[0] = toupper(str_cap[0]);
+	return str_cap;
+}
+
 /*** struct Word Methods: ***/
 void Word::CleanSigns()
 {
@@ -469,9 +515,11 @@ void Story::Analysis::ComputeConfidences()
 		prediction->ComputeConfidence(sum_of_all_genre_weights);
 }
 
-string Story::Analysis::ToCSVString()
+string Story::Analysis::ToString()
 {
 	ostringstream oss;
+	oss << "Story Name: " << ConvertToCapitalizedCase(story->name) << endl;
+	oss << "Predicted Genre: " << predictions[0]->genre->title << endl;
 	oss << "Genre, Number of Keywords, Confidence\n";
 	for (const auto &prediction : predictions)
 		oss << prediction->ToCSVColumn();
