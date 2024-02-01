@@ -124,7 +124,7 @@ struct Story
 	// Story and its analysis are linked two ways.
 	struct Analysis
 	{
-		static Int number_of_analysis;
+		static Long number_of_analysis;
 		Int id;
 		Story *story;
 		vector<Prediction *> predictions; // an array of predictions
@@ -164,13 +164,15 @@ struct Story
 	bool Analyze(vector<Genre>, string);
 };
 
-Int Story::Analysis::number_of_analysis = 0;
+Long Story::Analysis::number_of_analysis = 0;
 
 /*** UI Structures & enums ***/
 enum Commands {
 	CMD_EXIT = (char)0,
 	CMD_IMPORT_STORY,
-	CMD_ANALYZE_STORY
+	CMD_ANALYZE_STORY,
+	CMD_SHOW_STORY_ANALYSIS,
+	CMD_ANALYZED_SROTIES_LIST
 };
 
 // Main:
@@ -183,13 +185,15 @@ int main()
 	const string PROGRAM_COMMANDS[] = { // List of program commands:
 		"exit",
 		"is",
-		"as"
+		"as",
+		"show_story_analysis",
+		"analyzed_stories_list"
 	};
 
 	/*** Data Preprocessing: ***/
 	vector<Genre> common_genres;
 	vector<Story *> stories;
-
+	vector<Story::Analysis *> story_analyzes;
 	// Read genres data
 	for (int i = 0; i < NUMBER_OF_GENRES; i++)
 	{
@@ -241,22 +245,73 @@ int main()
 		}
 		else if (command == PROGRAM_COMMANDS[CMD_ANALYZE_STORY])
 		{
-			Int index;
+			SLong index = -1;
 			iss_line >> index;
-			if (index < 0 || index > stories.size())
+
+			string output_filename;
+			iss_line >> output_filename;
+			if (index == -1 || !output_filename[0] || output_filename.empty())
+			{
+				cout << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " {story_index} {output_file_name.txt}" << endl;
+				continue;
+			}
+			if (index < 1 || index > stories.size())
 			{
 				cout << "Invalid story index." << endl;
 				continue;
 			}
-			string output_filename;
-			iss_line >> output_filename;
-			if (!output_filename[0] || output_filename.empty())
+			stories[--index]->Analyze(common_genres, output_filename);
+			story_analyzes.push_back(stories[index]->analysis);
+			string str_analysis = stories[index]->analysis->ToCSVString();
+			cout << str_analysis;
+			ofstream output_file(output_filename);
+			if (!output_file.is_open() || !output_file.good() || output_file.fail())
 			{
-				cout << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " {story_index} {output_file_name.txt}\n";
+				cout << "Error openning file." << endl;
 				continue;
 			}
-			stories[--index]->Analyze(common_genres, output_filename);
+			output_file << str_analysis;
+			output_file.close();
+		}
+		else if (command == PROGRAM_COMMANDS[CMD_SHOW_STORY_ANALYSIS])
+		{
+			SLong index = -1;
+			iss_line >> index;
+			if (index == -1)
+			{
+				cout << index << PROGRAM_COMMANDS[CMD_SHOW_STORY_ANALYSIS] << " {story_index}" << endl;
+				continue;
+			}
+			if (index < 1 || index > stories.size())
+			{
+				cout << "Invalid story index." << endl;
+				continue;
+			}
+			if (stories[--index]->analysis == nullptr)
+			{
+				cout << "This story has not been analyzed yet. Please use the " << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " command." << endl;
+				continue;
+			}
 			cout << stories[index]->analysis->ToCSVString();
+		}
+		else if (command == PROGRAM_COMMANDS[CMD_ANALYZED_SROTIES_LIST])
+		{
+			Long number_of_analysis = story_analyzes.size();
+			if (!number_of_analysis)
+			{
+				cout << "No analyzed stories." << endl;
+				continue;
+			}
+
+			cout << "The analyzed stories are: ";
+			string first_story = ConvertToLowerCase(story_analyzes[0]->story->name);
+			first_story[0] = toupper(first_story[0]);
+			cout << first_story;
+			for (Int i = 1; i < number_of_analysis - 1; i++)
+				cout << ", " << ConvertToLowerCase(story_analyzes[i]->story->name);
+			if (number_of_analysis > 1)
+				cout << " and " << ConvertToLowerCase(story_analyzes[number_of_analysis - 1]->story->name);
+			cout << "." << endl;
 		}
 	} while (command != PROGRAM_COMMANDS[CMD_EXIT]);
 
