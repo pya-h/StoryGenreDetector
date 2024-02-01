@@ -30,17 +30,22 @@ bool FileExists(const std::string& filename)
 
 /*** Global Function Prototypes: **/
 	string ExtractNameFromFilename(string filename);
+	string ConvertToLowerCase(string str);
 
 /*** Structs & Models: ***/
 	struct Word
 	{
 		string w;
 		Long count;
-
-		Word(string _word)
+		bool is_captial_case;
+		bool is_at_sentence_start;
+		Word(string _word, bool _is_at_sentence_start = false)
 		{
 			count = 1;
-			w = _word;
+			is_at_sentence_start = _is_at_sentence_start;
+			if (_word[0] >= 'A' && _word[0] <= 'Z')
+				is_captial_case = true; // Special names always start with a Capital
+			w = ConvertToLowerCase(_word);
 			CleanSigns();
 		}
 
@@ -50,14 +55,14 @@ bool FileExists(const std::string& filename)
 	struct Keyword
 	{
 		Long id;
-		string value;
+		string w;
 		Word *story_word; // for Stories, this will connect to their matching words
 		int weight; // int is used (instead of unsigned int) for negative weights (if its considered!)
 		// for example, a word with negative weight can be used for decreasing the possibility of a genre
 
-		Keyword(string _value, int _weight)
+		Keyword(string _w, int _weight)
 		{
-			value = _value;
+			w = ConvertToLowerCase(_w);
 			weight = _weight;
 			story_word = nullptr;
 		}
@@ -86,7 +91,16 @@ bool FileExists(const std::string& filename)
 	{
 		Genre *genre;
 		float confidence; // The accuracy of the prediction
-		vector<Keyword> keywords;
+		//vector<Keyword *> common_words;
+		int m_i; // sum of weights * counts
+		Prediction(Genre *_genre)
+		{
+			genre = _genre;
+			m_i = 0;
+		}
+
+		void ComputeConfidence(int sum_of_all_genre_weights);
+		void ComputeGenreWeight(); // compute m_i
 	};
 
 
@@ -98,18 +112,19 @@ bool FileExists(const std::string& filename)
 			static Int number_of_analysis;
 			Int id;
 			Story *story;
-			vector<Prediction *> predictions; // an array of predictions
-			vector<Keyword *> common_words;
+			vector<Prediction> predictions; // an array of predictions
+			vector<Keyword *> common_words; 
+			int sum_of_all_genre_weights;
 
 			Analysis(Story *_story)
 			{
 				story = _story;
 				id = ++number_of_analysis;
+				sum_of_all_genre_weights = 0;
 			}
 
-			void Predict(vector<Genre> genres);
-
 			void Dump();
+			void ComputeConfidences();
 		};
 
 		Int index;
@@ -156,6 +171,7 @@ int main()
 	/*** Data Preprocessing: ***/
 	vector<Genre> common_genres;
 	vector<Story *> stories;
+
 
 	// Read genres data
 	for (int i = 0; i < NUMBER_OF_GENRES; i++)
@@ -210,7 +226,7 @@ int main()
 		{
 			Int index;
 			iss_line >> index;
-			if (index < 0 || index >= stories.size())
+			if (index < 0 || index > stories.size())
 			{
 				cout << "Invalid story index." << endl;
 				continue;
@@ -222,7 +238,7 @@ int main()
 				cout << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " {story_index} {output_file_name.txt}\n";
 				continue;
 			}
-
+			stories[index - 1]->Analyze(common_genres, output_filename);
 		}
 	} while (command != PROGRAM_COMMANDS[CMD_EXIT]);
 
@@ -244,7 +260,15 @@ int main()
 		return name;
 	}
 
-
+	string ConvertToLowerCase(string str)
+	{
+		string result = "";
+		for (char c : str)
+		{
+			result += tolower(c);
+		}
+		return result;
+	}
 /*** struct Word Methods: ***/
 	void Word::CleanSigns()
 	{
@@ -293,11 +317,15 @@ int main()
 		if (!story_file.is_open() || story_file.fail() || !story_file.good())
 			return false;
 		string str_word;
-
+		bool previous_sentence_ended = true;
+		char last_char;
 		while (story_file >> str_word) // Read the file word by word
 		{
-			Word word(str_word);
+			last_char = str_word[str_word.length() - 1];
+			Word word(str_word, previous_sentence_ended);
 			AddWord(word); // Add word to the words vector, or increase its count if it exists already.
+			previous_sentence_ended = last_char == '.' || last_char == '?' 
+				|| last_char == '!' || last_char == '\n' || last_char == ':' || last_char == ';';
 		}
 
 		story_file.close();
@@ -316,6 +344,8 @@ int main()
 		{
 			// If word is added to the vector previously, just increase its count.
 			words[i].count++;
+			if (!word.is_captial_case) // if it was a Person name, it must be always captial!
+				words[i].is_captial_case = false;
 		}
 
 	}
@@ -330,12 +360,52 @@ int main()
 	bool Story::Analyze(vector<Genre> genres, string output_filename)
 	{
 		Analysis *analysis = new Analysis(this);
-		for (const auto &genre : genres)
+		analysis->sum_of_all_genre_weights = 0;
+		for (auto &genre : genres)
 		{
-			for (const auto &word : words)
+			for (auto &keyword : genre.keywords)
 			{
-				
+				keyword.story_word = nullptr;
+				for (auto &word : words) // Check all the words of story for KeyWord match:
+				{
+					if (keyword.w == word.w)
+					{
+
+						keyword.story_word = &word; // Connect the word to its matched keyword; remember word contains the .count variable which is computed before wile loading,
+					// So there is no need to count anything in the story.
+						break;
+					}
+				}
 			}
+
+			Prediction prediction(&genre);
+			prediction.ComputeGenreWeight(); // m_i calculation
+			analysis->sum_of_all_genre_weights += prediction.m_i;
+			analysis->predictions.push_back(prediction);
 		}
+		
+		analysis->ComputeConfidences(); // sompute each prediction confidence
 		return true;
 	}
+
+	/*** struct Analysis ***/
+	void Story::Analysis::ComputeConfidences()
+	{
+		for (auto &prediction : predictions)
+			prediction.ComputeConfidence(sum_of_all_genre_weights);
+	}
+
+	/***struct Prediction ***/
+	void Prediction::ComputeGenreWeight()
+	{
+		m_i = 0;
+		for (const auto &keyword : genre->keywords)
+			if (keyword.story_word != nullptr)
+				m_i += keyword.weight * keyword.story_word->count;
+	}
+
+	void Prediction::ComputeConfidence(int sum_of_all_genre_weights)
+	{
+		confidence = static_cast<float>(m_i) / static_cast<float>(sum_of_all_genre_weights);
+	}
+
