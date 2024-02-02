@@ -39,13 +39,11 @@ struct Word
 	string w;
 	Long count;
 	bool is_captial_case;
-	bool is_at_sentence_start;
-	Word(string _word, bool _is_at_sentence_start = false)
+	Word(string _word)
 	{
 		count = 1;
-		is_at_sentence_start = _is_at_sentence_start;
-		if (_word[0] >= 'A' && _word[0] <= 'Z')
-			is_captial_case = true; // Special names always start with a Capital
+		is_captial_case = _word[0] >= 'A' && _word[0] <= 'Z';// Special names always start with a Capital
+
 		w = ConvertToLowerCase(_word);
 		CleanSigns();
 	}
@@ -79,7 +77,7 @@ struct Genre
 	Genre(string _title)
 	{
 		title = _title;
-		id = ++Genre::number_of_genres; // id starts from 1, 
+		id = ++Genre::number_of_genres; // id starts from 1,
 	}
 
 	Genre(string _title, vector<Keyword> _keywords)
@@ -111,6 +109,7 @@ struct Prediction
 		genre = _genre;
 		m_i = 0;
 		number_of_keywords = 0;
+		confidence = 0.0f;
 	}
 
 	void ComputeConfidence(int sum_of_all_genre_weights);
@@ -131,12 +130,14 @@ struct Story
 		vector<Prediction *> predictions; // an array of predictions
 		vector<Long> genre_keywords_total_counts; // number of keywords in the storys, by the order of imported genres
 		int sum_of_all_genre_weights;
+		Word* main_character;
 
 		Analysis(Story *_story)
 		{
 			story = _story;
 			id = ++number_of_analysis;
 			sum_of_all_genre_weights = 0;
+			main_character = nullptr;
 		}
 
 		string ToCSVColumn();
@@ -144,6 +145,7 @@ struct Story
 		string ToString();
 
 		void SortPredictions();
+		void FindMainCharacter();
 	};
 
 	Int index;
@@ -162,7 +164,7 @@ struct Story
 	bool LoadStory();
 	void AddWord(Word &);
 	void PrintWords();
-	bool Analyze(vector<Genre>, string);
+	void Analyze(vector<Genre>, string);
 };
 
 Long Story::Analysis::number_of_analysis = 0;
@@ -177,20 +179,22 @@ enum Commands {
 	CMD_EXIT,
 	CMD_SHOW_STORY_ANALYSIS,
 	CMD_SHOW_COMMANDS,
+	CMD_FIND_MAIN_CHARACTER
 };
+
 
 // Main:
 int main()
 {
 	/*** Initial Data **/
 	const short NUMBER_OF_GENRES = 4;
-	const string GENRE_FILENAMES[] = { 
+	const string GENRE_FILENAMES[] = {
 		"Romance.csv",
 		"Mystery.csv",
 		"Fantasy.csv",
 		"SciFi.csv"
 	}; // Genre file names:
-	const short NUMBER_OF_PROGRAM_COMMANDS = 8;
+	const short NUMBER_OF_PROGRAM_COMMANDS = 9;
 	const string PROGRAM_COMMANDS[] = { // List of program commands:
 		"import_story",
 		"show_the_list_of_stories",
@@ -199,7 +203,8 @@ int main()
 		"dump_analyzed_stories",
 		"exit",
 		"show_story_analysis",
-		"show_the_list_of_commands"
+		"show_the_list_of_commands",
+		"find_the_first_character"
 	};
 	const string PROGRAM_COMMANDS_PARAM_LIST[] = {
 		"{filename.txt}",
@@ -209,7 +214,8 @@ int main()
 		"{output_file_name.csv}",
 		"",
 		"{story_index}",
-		""
+		"",
+		"{story_index}"
 	};
 	/*** Data Preprocessing: ***/
 	vector<Genre> common_genres;
@@ -221,14 +227,31 @@ int main()
 		Genre *next_genre = Genre::CreateGenreFromCSV(GENRE_FILENAMES[i]); // CreateGenreFromCSV return a pointer
 		if (next_genre == nullptr) // For this if check, so if the pointer doesnt point to a new genre, means loading the genre was not successfull.
 		{
-			cout << "Error importing " << next_genre->title << " keywords. Please check keyword files." << endl;
+            cout << "Error importing " << ExtractNameFromFilename(GENRE_FILENAMES[i]) << " keywords. Please check keyword files." << endl;
 			return 1;
 		}
 		common_genres.push_back(*next_genre); // common_genres will be passed as copy, because we doesnt want its original objects to be modified.
-		// each story analysis will get a copy of these genres 
+		// each story analysis will get a copy of these genres
 	}
 
+	// Inline function for checking story indices:
+	auto common_story_index_check = [PROGRAM_COMMANDS, PROGRAM_COMMANDS_PARAM_LIST](SLong index, Long number_of_stories, Commands current_command)
+	{
+		if (index == -1)
+		{
+			cout << PROGRAM_COMMANDS[current_command] << " " << PROGRAM_COMMANDS_PARAM_LIST[current_command] << endl;
+			return false;
+		}
+		if (index < 1 || index > number_of_stories)
+		{
+			cout << "Invalid story index." << endl;
+			return false;
+		}
+		return true;
+	};
+
 	/*** Menu & Main App Loop:  ***/
+
 	string line = "", command = "";
 	do
 	{
@@ -268,19 +291,16 @@ int main()
 		{
 			SLong index = -1;
 			iss_line >> index;
-
+			if (!common_story_index_check(index, stories.size(), CMD_ANALYZE_STORY))
+				continue;
 			string output_filename;
 			iss_line >> output_filename;
-			if (index == -1 || !output_filename[0] || output_filename.empty())
+			if (!output_filename[0] || output_filename.empty())
 			{
 				cout << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " " << PROGRAM_COMMANDS_PARAM_LIST[CMD_ANALYZE_STORY] << endl;
 				continue;
 			}
-			if (index < 1 || index > stories.size())
-			{
-				cout << "Invalid story index." << endl;
-				continue;
-			}
+
 			stories[--index]->Analyze(common_genres, output_filename);
 			story_analyzes.push_back(stories[index]->analysis);
 			string str_analysis = stories[index]->analysis->ToString();
@@ -298,16 +318,8 @@ int main()
 		{
 			SLong index = -1;
 			iss_line >> index;
-			if (index == -1)
-			{
-				cout << index << PROGRAM_COMMANDS[CMD_SHOW_STORY_ANALYSIS] << " " << PROGRAM_COMMANDS_PARAM_LIST[CMD_SHOW_STORY_ANALYSIS] << endl;
+			if (!common_story_index_check(index, stories.size(), CMD_SHOW_STORY_ANALYSIS))
 				continue;
-			}
-			if (index < 1 || index > stories.size())
-			{
-				cout << "Invalid story index." << endl;
-				continue;
-			}
 			if (stories[--index]->analysis == nullptr)
 			{
 				cout << "This story has not been analyzed yet. Please use the " << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " command." << endl;
@@ -342,7 +354,7 @@ int main()
 			cout << "List of all imported stories are:" << endl;
 			for (Long i = 0; i < stories.size(); i++)
 				cout << i + 1 << ". " << ConvertToCapitalizedCase(stories[i]->name) << endl;
-			
+
 		}
 		else if (command == PROGRAM_COMMANDS[CMD_SHOW_COMMANDS])
 		{
@@ -386,6 +398,26 @@ int main()
 			}
 
 			output_file.close();
+		}
+		else if (command == PROGRAM_COMMANDS[CMD_FIND_MAIN_CHARACTER])
+		{
+			SLong index = -1;
+			iss_line >> index;
+			if (!common_story_index_check(index, stories.size(), CMD_FIND_MAIN_CHARACTER))
+				continue;
+			Story* story = stories[--index];
+			if (story->analysis == nullptr)
+			{
+				cout << "This story has not been analyzed yet. Please use the " << PROGRAM_COMMANDS[CMD_ANALYZE_STORY] << " command." << endl;
+				continue;
+			}
+			if (story->analysis->main_character != nullptr)
+			{
+				cout << "The first character of " << ConvertToLowerCase(story->name) << " is " <<
+					ConvertToCapitalizedCase(story->analysis->main_character->w) << "." << endl;
+			}
+			else
+				cout << "Cannot find first character." << endl;
 		}
 		else if (command != PROGRAM_COMMANDS[CMD_EXIT])
 			// all command list checked. command is invalid!
@@ -474,15 +506,13 @@ Genre *Genre::CreateGenreFromCSV(string filename)
 		if (!story_file.is_open() || story_file.fail() || !story_file.good())
 			return false;
 		string str_word;
-		bool previous_sentence_ended = true;
 		char last_char;
 		while (story_file >> str_word) // Read the file word by word
 		{
 			last_char = str_word[str_word.length() - 1];
-			Word word(str_word, previous_sentence_ended);
+			Word word(str_word);
 			AddWord(word); // Add word to the words vector, or increase its count if it exists already.
-			previous_sentence_ended = last_char == '.' || last_char == '?'
-				|| last_char == '!' || last_char == '\n' || last_char == ':' || last_char == ';';
+
 		}
 
 		story_file.close();
@@ -514,7 +544,7 @@ Genre *Genre::CreateGenreFromCSV(string filename)
 			cout << word.w << "\t\t" << word.count << endl;
 	}
 
-	bool Story::Analyze(vector<Genre> genres, string output_filename)
+	void Story::Analyze(vector<Genre> genres, string output_filename)
 	{
 		analysis = new Analysis(this);
 		analysis->sum_of_all_genre_weights = 0;
@@ -543,9 +573,9 @@ Genre *Genre::CreateGenreFromCSV(string filename)
 			analysis->genre_keywords_total_counts.push_back(prediction->number_of_keywords);
 		}
 
-		analysis->ComputeConfidences(); // sompute each prediction confidence
+		analysis->ComputeConfidences(); // sompute each prediction confidence, assignes ->predictions[..]->confidence
 		analysis->SortPredictions();
-		return true;
+		analysis->FindMainCharacter(); // assigns ->main_character
 	}
 
 /*** struct Story::Analysis ***/
@@ -563,7 +593,7 @@ Genre *Genre::CreateGenreFromCSV(string filename)
 		oss << "Genre, Number of Keywords, Confidence\n";
 		for (const auto &prediction : predictions)
 			oss << prediction->ToCSVColumn();
-	
+
 		return oss.str();
 	}
 
@@ -604,6 +634,25 @@ Genre *Genre::CreateGenreFromCSV(string filename)
 		return oss.str();
 	}
 
+	void Story::Analysis::FindMainCharacter()
+	{
+		// The Special name that is always Capital & has most repeats in the story
+		main_character = nullptr;
+		for (Word& word : story->words)
+		{
+			if (word.is_captial_case)
+			{
+				if (main_character == nullptr)
+				{
+					main_character = &word;
+					continue;
+				}
+				if (main_character->count < word.count)
+					main_character = &word;
+			}
+
+		}
+	}
 
 /***struct Prediction ***/
 	void Prediction::ComputeGenreWeight()
